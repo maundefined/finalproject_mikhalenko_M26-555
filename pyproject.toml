@@ -1,14 +1,29 @@
 [project]
 name = "finalproject-mikhalenko-m26-555"
 version = "0.1.0"
-description = "Add your description here"
+description = "Учебное приложение для управления валютным портфелем и получения курсов валют"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "prettytable>=3.18.0",
 ]
 
+[project.scripts]
+valutatrade = "valutatrade_hub.cli.interface:run"
+
 [dependency-groups]
 dev = [
     "ruff>=0.17.3",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.valutatrade]
+rates_ttl_seconds = 300
+default_base_currency = "USD"
+log_level = "INFO"
