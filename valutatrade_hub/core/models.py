@@ -1,12 +1,19 @@
 import hashlib
 from datetime import datetime
 
+from valutatrade_hub.core.exceptions import InsufficientFundsError
 from valutatrade_hub.core.utils import MIN_PASSWORD_LEN
 
 
 class User:
-    def __init__(self, user_id: int, username: str,
-        hashed_password: str, salt: str, registration_date: datetime,):
+    def __init__(
+        self,
+        user_id: int,
+        username: str,
+        hashed_password: str,
+        salt: str,
+        registration_date: datetime,
+    ):
         self._user_id = user_id
         self._username = username
         self._hashed_password = hashed_password
@@ -27,7 +34,7 @@ class User:
     @username.setter
     def username(self, value: str) -> None:
         if not value or not value.strip():
-            raise ValueError('Имя пользователя не может быть пустым')
+            raise ValueError("Имя пользователя не может быть пустым")
         self._username = value
 
     @property
@@ -55,18 +62,21 @@ class User:
         self._registration_date = value
 
     def get_user_info(self) -> None:
-        print(f'ID: {self._user_id}')
-        print(f'Имя пользователя: {self._username}')
-        print(f'Дата регистрации: {self._registration_date.isoformat()}')
+        print(f"ID: {self._user_id}")
+        print(f"Имя пользователя: {self._username}")
+        print(f"Дата регистрации: {self._registration_date.isoformat()}")
 
     def change_password(self, new_password: str) -> None:
         if len(new_password) < MIN_PASSWORD_LEN:
-            raise ValueError(f'Пароль не соответсвует парольной политике: новый пароль '
-                             f'должен содержать больше {MIN_PASSWORD_LEN} символов')
+            raise ValueError(
+                f"Пароль не соответсвует парольной политике: новый пароль "
+                f"должен содержать больше {MIN_PASSWORD_LEN} символов"
+            )
         self._hashed_password = self._hash_password(new_password)
 
     def verify_password(self, password: str) -> bool:
         return self._hash_password(password) == self._hashed_password
+
 
 class Wallet:
     def __init__(self, currency_code: str, balance: float = 0.0):
@@ -80,7 +90,7 @@ class Wallet:
     @currency_code.setter
     def currency_code(self, value: str) -> None:
         if not value or not value.strip():
-            raise ValueError('Код валюты не может быть пустым')
+            raise ValueError("Код валюты не может быть пустым")
         self._currency_code = value
 
     @property
@@ -90,34 +100,43 @@ class Wallet:
     @balance.setter
     def balance(self, value: float) -> None:
         if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError('Баланс должен быть числом')
+            raise TypeError("Баланс должен быть числом")
         if value < 0:
-            raise ValueError('Баланс не может быть отрицательным')
+            raise ValueError("Баланс не может быть отрицательным")
         self._balance = float(value)
 
     def deposit(self, amount: float) -> None:
         if not isinstance(amount, (int, float)) or isinstance(amount, bool):
-            raise TypeError('Сумма должна быть числом')
+            raise TypeError("Сумма должна быть числом")
         if amount <= 0:
-            raise ValueError('Сумма пополнения должна быть положительной')
+            raise ValueError("Сумма пополнения должна быть положительной")
         self._balance += float(amount)
 
     def withdraw(self, amount: float) -> None:
         if not isinstance(amount, (int, float)) or isinstance(amount, bool):
-            raise TypeError('Сумма должна быть числом')
+            raise TypeError("Сумма должна быть числом")
         if amount <= 0:
-            raise ValueError('Сумма снятия должна быть положительной')
+            raise ValueError("Сумма снятия должна быть положительной")
         if amount > self._balance:
-            raise ValueError('Недостаточно средств на балансе')
+            raise InsufficientFundsError(
+                available=self._balance,
+                code=self._currency_code,
+                required=float(amount),
+            )
         self._balance -= float(amount)
 
     def get_balance_info(self) -> None:
-        print(f'Валюта: {self._currency_code}')
-        print(f'Текущий баланс: {self._balance}')
+        print(f"Валюта: {self._currency_code}")
+        print(f"Текущий баланс: {self._balance}")
+
 
 class Portfolio:
-    def __init__(self, user_id: int, wallets: dict[str, Wallet] | None = None, 
-                                            user: User | None = None) -> None:
+    def __init__(
+        self,
+        user_id: int,
+        wallets: dict[str, Wallet] | None = None,
+        user: User | None = None,
+    ) -> None:
         self._user_id = user_id
         self._wallets = wallets if wallets is not None else {}
         self._user = user
@@ -136,9 +155,9 @@ class Portfolio:
 
     def add_currency(self, currency_code: str) -> None:
         if not currency_code or not currency_code.strip():
-            raise ValueError('Код валюты не может быть пустым')
+            raise ValueError("Код валюты не может быть пустым")
         if currency_code in self._wallets:
-            raise ValueError(f'Кошелёк для валюты {currency_code} уже существует')
+            raise ValueError(f"Кошелёк для валюты {currency_code} уже существует")
         self._wallets[currency_code] = Wallet(currency_code)
 
     def get_wallet(self, currency_code: str):
@@ -146,7 +165,7 @@ class Portfolio:
 
     def get_total_value(self, base_currency: str = "USD") -> float:
         if base_currency not in self.STUB_RATES:
-            raise ValueError(f'Неизвестная валюта: {base_currency}')
+            raise ValueError(f"Неизвестная валюта: {base_currency}")
         base_rate = self.STUB_RATES[base_currency]
         total_in_usd = 0.0
         for code, wallet in self._wallets.items():
