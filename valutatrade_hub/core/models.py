@@ -1,12 +1,8 @@
 import hashlib
 from datetime import datetime
 
-MIN_PASSWORD_LEN = 4
+from valutatrade_hub.core.utils import MIN_PASSWORD_LEN
 
-exchange_rates = {'EUR_USD': 1.0786,
-                  'BTC_USD': 59337.21,              
-                  'RUB_USD': 0.01016,                 
-                  'ETH_USD': 3720.00}
 
 class User:
     def __init__(self, user_id: int, username: str,
@@ -66,7 +62,7 @@ class User:
     def change_password(self, new_password: str) -> None:
         if len(new_password) < MIN_PASSWORD_LEN:
             raise ValueError(f'Пароль не соответсвует парольной политике: новый пароль '
-                             f'должен быть содержать больше {MIN_PASSWORD_LEN} символов')
+                             f'должен содержать больше {MIN_PASSWORD_LEN} символов')
         self._hashed_password = self._hash_password(new_password)
 
     def verify_password(self, password: str) -> bool:
@@ -149,11 +145,11 @@ class Portfolio:
         return self._wallets.get(currency_code)
 
     def get_total_value(self, base_currency: str = "USD") -> float:
-        if base_currency not in self.exchange_rates:
+        if base_currency not in self.STUB_RATES:
             raise ValueError(f'Неизвестная валюта: {base_currency}')
-        base_rate = self.exchange_rates[base_currency]
+        base_rate = self.STUB_RATES[base_currency]
         total_in_usd = 0.0
         for code, wallet in self._wallets.items():
-            rate = self.exchange_rates.get(code, 0.0)
+            rate = self.STUB_RATES.get(code, 0.0)
             total_in_usd += wallet.balance * rate
         return total_in_usd / base_rate
