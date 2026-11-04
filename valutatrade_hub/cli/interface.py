@@ -12,7 +12,6 @@ from valutatrade_hub.parser_service.config import parser_config
 from valutatrade_hub.parser_service.storage import ParserStorage
 from valutatrade_hub.parser_service.updater import build_default_updater
 
-
 _HELP_ENTRIES = [
     (
         "register",
@@ -472,6 +471,7 @@ def run() -> None:
         if line.lower() in ("exit", "quit"):
             return
         dispatch(line)
+
 
 def main() -> None:
     from valutatrade_hub.logging_config import setup_logging
