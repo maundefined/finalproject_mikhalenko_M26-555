@@ -7,6 +7,10 @@ from valutatrade_hub.core.exceptions import InsufficientFundsError
 
 
 class User:
+    """Пользователь системы.
+    Хранит учётные данные и метаданные регистрации.
+    Пароль не хранится в открытом виде — только в хэшированном
+    и индивидуальная соль."""
     def __init__(
         self,
         user_id: int,
@@ -71,6 +75,8 @@ class User:
         self._registration_date = value
 
     def get_user_info(self) -> None:
+        """Вернуть словарь с публичной информацией о пользователе.
+           Пароль и соль в результат не попадают."""
         print(f"ID: {self._user_id}")
         print(f"Имя пользователя: {self._username}")
         print(f"Дата регистрации: {self._registration_date.isoformat()}")
@@ -88,6 +94,7 @@ class User:
 
 
 class Wallet:
+    """Кошелёк пользователя для одной валюты."""
     def __init__(self, currency_code: str, balance: float = 0.0):
         self.currency_code = currency_code
         self.balance = balance

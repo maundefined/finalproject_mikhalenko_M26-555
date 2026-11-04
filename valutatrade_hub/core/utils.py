@@ -21,6 +21,8 @@ STUB_EXCHANGE_RATES = {
     "SOL_USD": 145.12,
 }
 
+QUOTE_CURRENCY = "USD"
+
 
 def _to_usd_rates(pairs: dict) -> dict:
     """Из {'EUR_USD': 1.0786, ...} сделать {'EUR': 1.0786, 'USD': 1.0, ...}."""

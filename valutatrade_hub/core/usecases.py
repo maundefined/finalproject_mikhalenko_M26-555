@@ -312,7 +312,7 @@ def buy_currency(user_id: int, currency_code: str, amount) -> dict:
     code = get_currency(currency_code).code
     amount = _validate_amount(amount)
 
-    base = "USD"
+    base = utils.QUOTE_CURRENCY
     rates = db.read(utils.RATES_PATH, {})
     rate = _require_rate(code, base, rates)
     cost = amount * rate
@@ -379,7 +379,7 @@ def sell_currency(user_id: int, currency_code: str, amount) -> dict:
     code = get_currency(currency_code).code
     amount = _validate_amount(amount)
 
-    base = "USD"
+    base = utils.QUOTE_CURRENCY
     rates = db.read(utils.RATES_PATH, {})
     rate = _require_rate(code, base, rates)
     proceeds = amount * rate
