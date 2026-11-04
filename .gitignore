@@ -2,7 +2,7 @@ __pycache__/
 .venv/
 dist/
 .env
-data/
+data/*.json
 logs/
 .ruff_cache/
 *.egg-info/
