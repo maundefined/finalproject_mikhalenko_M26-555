@@ -26,8 +26,4 @@ class ApiRequestError(ValutaTradeError):
 
 
 class StorageError(ValutaTradeError):
-    """Ошибка чтения/записи JSON-хранилища.
-
-    Возникает в ``DatabaseManager.read``/``write`` и пробрасывается
-    вызывающему коду как есть (``dispatch`` ловит ``ValutaTradeError``).
-    """
+    """Ошибка чтения/записи JSON-хранилища."""

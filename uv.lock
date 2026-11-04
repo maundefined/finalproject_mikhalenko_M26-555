@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "finalproject-mikhalenko-m26-555"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "prettytable" },
 ]

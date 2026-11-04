@@ -1,24 +1,25 @@
 """Бизнес-логика проекта.
 
-Синглтон-настройки (``settings``):
-  * ``rates_ttl_seconds`` — TTL кеша курсов (``_is_cache_fresh``);
-  * ``default_base_currency`` — базовая валюта по умолчанию (``get_portfolio_view``);
-  * пути JSON — в ``utils.USERS_PATH`` / ``PORTFOLIOS_PATH`` / ``RATES_PATH``.
+Синглтон-настройки (settings):
+  * rates_ttl_seconds — TTL кеша курсов (_is_cache_fresh);
+  * default_base_currency — базовая валюта по умолчанию (get_portfolio_view);
+  * пути JSON — в utils.USERS_PATH / PORTFOLIOS_PATH / RATES_PATH.
 
-Синглтон-БД (``db`` из ``infra.database``):
-  * все операции чтения/записи идут через ``DatabaseManager``;
-  * мутации — через ``db.transaction`` (read → mutator → write), что
+Синглтон-БД (db из infra.database):
+  * все операции чтения/записи идут через DatabaseManager;
+  * мутации — через db.transaction (read → mutator → write), что
     гарантирует: при исключении в мутаторе файл не перезаписывается.
 
-Декораторы ``@log_action``:
+Декораторы @log_action:
   * REGISTER, LOGIN — без verbose;
-  * BUY, SELL — с ``verbose=True`` (плюс ``wallet=before->after``,
-    ``usd=before->after``).
+  * BUY, SELL — с verbose=True (плюс wallet=before->after,
+    usd=before->after).
 """
 
 import hashlib
+import math
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from valutatrade_hub.core import utils
 from valutatrade_hub.core.currencies import get_currency
@@ -31,13 +32,6 @@ from valutatrade_hub.infra.database import db
 from valutatrade_hub.infra.settings import settings
 
 _current_user = None
-
-STUB_RATES = {
-    "EUR_USD": 1.0786,
-    "BTC_USD": 59337.21,
-    "RUB_USD": 0.01016,
-    "ETH_USD": 3720.00,
-}
 
 
 def _hash(password: str, salt: str) -> str:
@@ -72,12 +66,23 @@ def _find_portfolio(portfolios: list, user_id: int):
 def _usd_rate(code: str, rates: dict):
     if code == "USD":
         return 1.0
-    direct = rates.get(f"{code}_USD")
+    pairs = rates.get("pairs") if isinstance(rates, dict) else None
+    if not isinstance(pairs, dict):
+        pairs = rates
+    direct = pairs.get(f"{code}_USD")
     if isinstance(direct, dict):
-        return float(direct["rate"])
-    inverse = rates.get(f"USD_{code}")
+        try:
+            value = float(direct["rate"])
+            return value if math.isfinite(value) and value > 0 else None
+        except (KeyError, TypeError, ValueError):
+            return None
+    inverse = pairs.get(f"USD_{code}")
     if isinstance(inverse, dict):
-        return 1.0 / float(inverse["rate"])
+        try:
+            value = float(inverse["rate"])
+            return 1.0 / value if math.isfinite(value) and value > 0 else None
+        except (KeyError, TypeError, ValueError):
+            return None
     return None
 
 
@@ -103,21 +108,24 @@ def _validate_amount(amount) -> float:
         try:
             amount = float(amount)
         except ValueError:
-            raise ValueError("'amount' должен быть положительным числом")
+            raise ValueError("'amount' должен быть положительным числом") from None
     if isinstance(amount, bool) or not isinstance(amount, (int, float)):
         raise TypeError("'amount' должен быть положительным числом")
     amount = float(amount)
-    if amount <= 0:
+    if not math.isfinite(amount) or amount <= 0:
         raise ValueError("'amount' должен быть положительным числом")
     return amount
 
 
 @log_action("REGISTER")
 def register_user(username: str, password: str) -> User:
-    if username is None or not username.strip():
+    if not isinstance(username, str) or not username.strip():
         raise ValueError("Имя пользователя не может быть пустым")
-    if password is None or len(password) < 4:
-        raise ValueError("Пароль должен быть не короче 4 символов")
+    username = username.strip()
+    if not isinstance(password, str) or len(password) < utils.MIN_PASSWORD_LEN:
+        raise ValueError(
+            f"Пароль должен быть не короче {utils.MIN_PASSWORD_LEN} символов"
+        )
 
     users = db.read(utils.USERS_PATH, [])
     for existing in users:
@@ -161,9 +169,10 @@ def register_user(username: str, password: str) -> User:
 def login_user(username: str, password: str) -> User:
     global _current_user
 
-    if username is None or not username.strip():
+    if not isinstance(username, str) or not username.strip():
         raise ValueError("Имя пользователя не может быть пустым")
-    if password is None or password == "":
+    username = username.strip()
+    if not isinstance(password, str) or password == "":
         raise ValueError("Пароль не может быть пустым")
 
     users = db.read(utils.USERS_PATH, [])
@@ -191,24 +200,30 @@ def _is_cache_fresh(rates: dict) -> bool:
     if not last:
         return False
     try:
-        dt = datetime.fromisoformat(last)
+        dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
     except (TypeError, ValueError):
         return False
-    ttl = int(settings.get("rates_ttl_seconds", 300))
-    age = (datetime.now() - dt).total_seconds()
+    ttl = max(0, int(settings.get("rates_ttl_seconds", 300)))
+    age = (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds()
     return 0 <= age < ttl
 
 
 def _refresh_from_stub(rates: dict) -> None:
-    """Заглушка Parser Service: обновляет in-place и пишет в БД."""
-    if not STUB_RATES:
+    if not utils.STUB_EXCHANGE_RATES:
         raise ApiRequestError("сервис курсов вернул пустой ответ")
     try:
-        now = datetime.now().isoformat()
-        for pair, value in STUB_RATES.items():
-            rates[pair] = {"rate": value, "updated_at": now}
-        rates["source"] = "ParserService"
-        rates["last_refresh"] = now
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        pairs = rates.get("pairs", {})
+        if not isinstance(pairs, dict):
+            pairs = {}
+        had_cached_pairs = bool(pairs)
+        for pair, value in utils.STUB_EXCHANGE_RATES.items():
+            pairs.setdefault(pair, {"rate": value, "updated_at": now, "source": "Stub"})
+        rates["pairs"] = pairs
+        if not had_cached_pairs:
+            rates["last_refresh"] = now
         db.write(utils.RATES_PATH, rates)
     except ApiRequestError:
         raise
@@ -224,8 +239,19 @@ def get_rate(from_currency: str, to_currency: str) -> dict:
 
     rate = _rate(code_from, code_to, rates)
     if rate is None or not _is_cache_fresh(rates):
-        _refresh_from_stub(rates)
+        try:
+            from valutatrade_hub.parser_service.updater import build_default_updater
+
+            build_default_updater().run_update()
+            rates = db.read(utils.RATES_PATH, {})
+        except (ApiRequestError, OSError, ValueError):
+            rates = db.read(utils.RATES_PATH, {})
+
         rate = _rate(code_from, code_to, rates)
+        if rate is None:
+            _refresh_from_stub(rates)
+            rates = db.read(utils.RATES_PATH, {})
+            rate = _rate(code_from, code_to, rates)
 
     if rate is None:
         raise ApiRequestError(f"курс {code_from}→{code_to} недоступен")
@@ -291,6 +317,8 @@ def buy_currency(user_id: int, currency_code: str, amount) -> dict:
     rate = _require_rate(code, base, rates)
     cost = amount * rate
 
+    ctx = {}
+
     def mutate(portfolios):
         portfolio = _find_portfolio(portfolios, user_id)
         if portfolio is None:
@@ -321,14 +349,16 @@ def buy_currency(user_id: int, currency_code: str, amount) -> dict:
         after = target.balance
         wallets[code] = _wallet_to_dict(target)
 
-        return {
-            "before": before,
-            "after": after,
-            "usd_before": usd_before,
-            "usd_after": usd_after,
-        }
+        ctx.update(
+            {
+                "before": before,
+                "after": after,
+                "usd_before": usd_before,
+                "usd_after": usd_after,
+            }
+        )
 
-    ctx = db.transaction(utils.PORTFOLIOS_PATH, [], mutate)
+    db.transaction(utils.PORTFOLIOS_PATH, [], mutate)
 
     return {
         "user_id": user_id,
@@ -353,6 +383,8 @@ def sell_currency(user_id: int, currency_code: str, amount) -> dict:
     rates = db.read(utils.RATES_PATH, {})
     rate = _require_rate(code, base, rates)
     proceeds = amount * rate
+
+    ctx = {}
 
     def mutate(portfolios):
         portfolio = _find_portfolio(portfolios, user_id)
@@ -381,14 +413,16 @@ def sell_currency(user_id: int, currency_code: str, amount) -> dict:
             usd_after = usd_wallet.balance
             wallets["USD"] = _wallet_to_dict(usd_wallet)
 
-        return {
-            "before": before,
-            "after": after,
-            "usd_before": usd_before,
-            "usd_after": usd_after,
-        }
+        ctx.update(
+            {
+                "before": before,
+                "after": after,
+                "usd_before": usd_before,
+                "usd_after": usd_after,
+            }
+        )
 
-    ctx = db.transaction(utils.PORTFOLIOS_PATH, [], mutate)
+    db.transaction(utils.PORTFOLIOS_PATH, [], mutate)
 
     return {
         "user_id": user_id,

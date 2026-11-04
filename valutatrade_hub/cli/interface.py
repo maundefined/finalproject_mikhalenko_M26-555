@@ -8,6 +8,92 @@ from valutatrade_hub.core.exceptions import (
     InsufficientFundsError,
     ValutaTradeError,
 )
+from valutatrade_hub.parser_service.config import parser_config
+from valutatrade_hub.parser_service.storage import ParserStorage
+from valutatrade_hub.parser_service.updater import build_default_updater
+
+
+_HELP_ENTRIES = [
+    (
+        "register",
+        "register --username <str> --password <str>",
+        "Создать нового пользователя.",
+    ),
+    (
+        "login",
+        "login --username <str> --password <str>",
+        "Войти в систему. Открывает сессию для buy/sell/show-portfolio.",
+    ),
+    (
+        "show-portfolio",
+        "show-portfolio [--base <str>]",
+        "Показать все кошельки и итоговую стоимость (по умолчанию USD).",
+    ),
+    (
+        "buy",
+        "buy --currency <str> --amount <float>",
+        "Купить валюту. Списывает USD, автосоздаёт кошелёк при необходимости.",
+    ),
+    (
+        "sell",
+        "sell --currency <str> --amount <float>",
+        "Продать валюту. Начисляет выручку в USD.",
+    ),
+    (
+        "get-rate",
+        "get-rate --from <str> --to <str>",
+        "Курс одной валюты к другой из локального кеша.",
+    ),
+    (
+        "show-rates",
+        "show-rates [--currency <str>] [--top <int>] [--base <str>]",
+        "Все курсы из кеша с фильтрами.",
+    ),
+    (
+        "update-rates",
+        "update-rates [--source coingecko|exchangerate]",
+        "Запустить обновление курсов через Parser Service.",
+    ),
+    (
+        "help",
+        "help [<command>]",
+        "Показать справку по всем командам или по одной.",
+    ),
+    (
+        "exit",
+        "exit | quit",
+        "Выйти из программы.",
+    ),
+]
+
+
+def _print_help(command: str | None = None) -> None:
+    if command:
+        entry = next((e for e in _HELP_ENTRIES if e[0] == command.lower()), None)
+        if entry is None:
+            print(f"Неизвестная команда: {command}")
+            print("Наберите 'help' без аргументов для списка команд.")
+            return
+        name, usage, description = entry
+        print(f"{name}")
+        print(f"  Использование: {usage}")
+        print(f"  {description}")
+        return
+
+    print("ValutaTrade Hub — доступные команды:")
+    for _name, usage, description in _HELP_ENTRIES:
+        print(f"  {usage}")
+        print(f"      {description}")
+    print("Подробнее: help <command>   (например, help buy)")
+
+
+def _cmd_help(args):
+    if not args:
+        _print_help()
+        return
+    if len(args) != 1:
+        raise ValueError("Использование: help [<command>]")
+    _print_help(args[0])
 
 
 def _parse_named_args(args):
@@ -89,12 +175,16 @@ def _fmt_balance(value: float) -> str:
 def _fmt_rate(rate) -> str:
     if rate is None:
         return "—"
-    if rate >= 1:
+    try:
+        rate = float(rate)
+    except (TypeError, ValueError):
+        return "—"
+    if rate >= 100:
         return f"{rate:.2f}"
-    if rate >= 0.01:
+    if rate >= 1:
         return f"{rate:.4f}"
-    if rate >= 0.0001:
-        return f"{rate:.6f}"
+    if rate >= 0.001:
+        return f"{rate:.5f}"
     return f"{rate:.8f}"
 
 
@@ -199,6 +289,134 @@ def _cmd_get_rate(args):
     )
 
 
+def _fmt_iso(value) -> str:
+    if not value or value == "—":
+        return "—"
+    return str(value).split(".")[0].rstrip("Z")
+
+
+def _cmd_update_rates(args):
+    params = _parse_named_args(args)
+    source = params.get("source")
+    updater = build_default_updater()
+    result = updater.run_update(source=source)
+
+    if result["errors"]:
+        print("Update completed with errors. Check logs/parser.log for details.")
+        for err in result["errors"]:
+            print(f"  - {err}")
+    elif result["total_rates"] == 0:
+        print("Update completed. No rates received.")
+    else:
+        print(
+            f"Update successful. Total rates updated: {result['total_rates']}. "
+            f"Last refresh: {_fmt_iso(result['last_refresh'])}"
+        )
+
+
+_EMPTY_CACHE_MSG = (
+    "Локальный кеш курсов пуст. Выполните 'update-rates', чтобы загрузить данные."
+)
+
+
+def _cmd_show_rates(args):
+    params = _parse_named_args(args)
+    storage = ParserStorage(
+        parser_config.RATES_FILE_PATH, parser_config.HISTORY_FILE_PATH
+    )
+    try:
+        data = storage.read_cache()
+    except ValutaTradeError:
+        print(_EMPTY_CACHE_MSG)
+        return
+
+    pairs = data.get("pairs", {}) if isinstance(data, dict) else {}
+    if not isinstance(pairs, dict) or not pairs:
+        print(_EMPTY_CACHE_MSG)
+        return
+
+    last_refresh = data.get("last_refresh", "—")
+    currency = params.get("currency")
+    base = params.get("base")
+    top = params.get("top")
+
+    filtered = dict(pairs)
+
+    if currency:
+        code = currency.upper()
+        filtered = {p: v for p, v in filtered.items() if code in p.split("_")}
+        if not filtered:
+            print(f"Курс для '{code}' не найден в кеше.")
+            return
+
+    if top is not None:
+        try:
+            n = int(top)
+        except ValueError:
+            raise ValueError("--top должен быть целым положительным числом") from None
+        if n <= 0:
+            raise ValueError("--top должен быть целым положительным числом")
+        crypto = set(parser_config.CRYPTO_CURRENCIES)
+        crypto_pairs = {
+            p: v for p, v in filtered.items() if p.split("_", 1)[0] in crypto
+        }
+        filtered = dict(
+            sorted(
+                crypto_pairs.items(),
+                key=lambda kv: float(kv[1].get("rate", 0.0)),
+                reverse=True,
+            )[:n]
+        )
+        if not filtered:
+            print("Курсы криптовалют не найдены в кеше.")
+            return
+
+    if base:
+        base_code = base.upper()
+        usd_map = {"USD": 1.0}
+        for pair, entry in pairs.items():
+            parts = pair.split("_", 1)
+            if len(parts) != 2:
+                continue
+            fc, tc = parts
+            if tc == "USD":
+                try:
+                    usd_map[fc] = float(entry["rate"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+        if base_code not in usd_map:
+            print(f"Курс для '{base_code}' не найден в кеше.")
+            return
+        base_usd = usd_map[base_code]
+        converted = {}
+        for pair, entry in filtered.items():
+            parts = pair.split("_", 1)
+            if len(parts) != 2:
+                continue
+            fc, tc = parts
+            if fc == base_code:
+                continue
+            try:
+                rate_usd = float(entry["rate"])
+            except (TypeError, ValueError):
+                continue
+            if tc == "USD":
+                converted[f"{fc}_{base_code}"] = {
+                    "rate": rate_usd / base_usd,
+                    "updated_at": entry.get("updated_at"),
+                    "source": entry.get("source"),
+                }
+        filtered = converted
+        if not filtered:
+            print(f"Не удалось пересчитать курсы в базу '{base_code}'.")
+            return
+
+    print(f"Rates from cache (updated at {_fmt_iso(last_refresh)}):")
+    for pair in sorted(filtered.keys()):
+        entry = filtered[pair]
+        print(f"- {pair}: {_fmt_rate(entry.get('rate'))}")
+
+
 _COMMANDS = {
     "register": _cmd_register,
     "login": _cmd_login,
@@ -206,6 +424,10 @@ _COMMANDS = {
     "buy": _cmd_buy,
     "sell": _cmd_sell,
     "get-rate": _cmd_get_rate,
+    "update-rates": _cmd_update_rates,
+    "show-rates": _cmd_show_rates,
+    "help": _cmd_help,
+    "?": _cmd_help,  # алиас
 }
 
 
@@ -236,6 +458,9 @@ def dispatch(line: str) -> None:
 
 
 def run() -> None:
+    _print_help()
+    print("Введите команду (exit/quit — выход).")
+    print()
     while True:
         try:
             line = input("> ").strip()
@@ -247,3 +472,9 @@ def run() -> None:
         if line.lower() in ("exit", "quit"):
             return
         dispatch(line)
+
+def main() -> None:
+    from valutatrade_hub.logging_config import setup_logging
+
+    setup_logging()
+    run()

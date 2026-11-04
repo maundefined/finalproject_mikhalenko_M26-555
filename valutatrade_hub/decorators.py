@@ -46,9 +46,6 @@ def _extract_inputs(func, args, kwargs) -> dict:
 
 
 def _current_username():
-    # Ленивый импорт: usecases импортирует этот модуль, поэтому импорт
-    # get_current_user на верхнем уровне создал бы цикл. К моменту вызова
-    # обёртки usecases уже загружен полностью — импорт безопасен.
     try:
         from valutatrade_hub.core.usecases import get_current_user
 
@@ -151,12 +148,6 @@ def log_action(action: str, *, verbose: bool = False):
         base=... result=OK``;
       * ошибка: ``<ACTION> user=... currency=... amount=...
         result=ERROR error_type=... error_message=...``.
-
-    Исключение не подавляет — пробрасывает дальше после записи в лог.
-
-    ``verbose=True`` добавляет контекст кошельков: ``wallet=before->after``
-    (целевая валюта) и ``usd=before->after`` (базовая валюта, если менялась).
-    Значения берутся из возвращаемого функцией словаря.
     """
     normalized = action.upper()
 

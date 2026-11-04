@@ -8,29 +8,7 @@ except ImportError:
 
 
 class SettingsLoader:
-    """Singleton-загрузчик конфигурации проекта.
-
-    Почему ``__new__``, а не метакласс:
-      * минимальный код — не нужно писать отдельный метакласс и следить
-        за его взаимодействием с наследованием;
-      * читается одним взглядом: любой вызов ``SettingsLoader()`` возвращает
-        ровно один и тот же объект (``cls._instance``);
-      * метакласс дал бы больше контроля (например, запрет повторного
-        ``__init__`` на уровне класса), но здесь это избыточно.
-
-    Гарантия единственности:
-      * экземпляр создаётся при первом обращении и запоминается в
-        ``cls._instance``;
-      * повторное ``SettingsLoader()`` возвращает тот же объект;
-      * модуль-уровневая переменная ``settings`` создаётся **один раз**
-        при импорте модуля; все импортёры получают одну и ту же ссылку —
-        в том числе при многократном ``import`` из разных мест.
-
-    Источники (в порядке возрастания приоритета):
-      1. значения по умолчанию;
-      2. ``config.json`` (корень проекта);
-      3. ``[tool.valutatrade]`` в ``pyproject.toml`` (если доступен ``tomllib``).
-    """
+    """Singleton-загрузчик конфигурации проекта."""
 
     _instance = None
 
@@ -47,15 +25,11 @@ class SettingsLoader:
         self.reload()
 
     def get(self, key: str, default=None):
-        """Вернуть значение конфигурации или ``default``, если ключа нет."""
+        """Вернуть значение конфигурации или default, если ключа нет."""
         return self._data.get(key, default)
 
     def reload(self) -> None:
-        """Перечитать конфигурацию из всех источников.
-
-        Полезно, если ``config.json`` изменился во время работы и нужно
-        подхватить новые значения без перезапуска процесса.
-        """
+        """Перечитать конфигурацию из всех источников."""
         config: dict = {}
         config.update(self._defaults())
         config.update(self._load_config_json())
@@ -72,6 +46,7 @@ class SettingsLoader:
             "rates_ttl_seconds": 300,
             "default_base_currency": "USD",
             "log_path": "logs/actions.log",
+            "parser_log_path": "logs/parser.log",
             "log_format": "%(levelname)s %(asctime)s %(message)s",
             "log_datefmt": "%Y-%m-%dT%H:%M:%S",
             "log_level": "INFO",

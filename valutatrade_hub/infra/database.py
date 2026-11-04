@@ -5,18 +5,7 @@ from valutatrade_hub.core.exceptions import StorageError
 
 
 class DatabaseManager:
-    """Singleton-абстракция над JSON-хранилищем.
-
-    Почему ``__new__``: те же причины, что у ``SettingsLoader`` — минимальный
-    код, один экземпляр на процесс, никакой возни с метаклассами.
-
-    Все операции — «безопасные»:
-      * ``read``   — не падает на отсутствующем файле (возвращает ``default``);
-      * ``write``  — атомарная запись через ``*.tmp`` + ``os.replace``,
-                     чтобы не оставить файл в «полу-записанном» состоянии;
-      * ``transaction`` — read → mutator → write; при исключении в mutator
-                     файл **не** изменяется.
-    """
+    """Singleton-абстракция над JSON-хранилищем."""
 
     _instance = None
 
@@ -32,24 +21,39 @@ class DatabaseManager:
 
     def read(self, path: str, default):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 content = f.read()
         except FileNotFoundError:
             return default
         except OSError as exc:
-            raise StorageError(
-                f"Не удалось прочитать {path}: {exc}"
-            ) from exc
+            raise StorageError(f"Не удалось прочитать {path}: {exc}") from exc
 
         if not content.strip():
             return default
 
         try:
-            return json.loads(content)
+            data = json.loads(content)
         except json.JSONDecodeError as exc:
+            raise StorageError(f"Не удалось прочитать {path}: {exc}") from exc
+
+        if isinstance(default, list):
+            if not isinstance(data, list):
+                raise StorageError(
+                    f"Файл {path} повреждён: ожидался JSON-массив, "
+                    f"получено {type(data).__name__}. "
+                    f"Удалите файл — он будет создан автоматически."
+                )
+            if not all(isinstance(x, dict) for x in data):
+                raise StorageError(
+                    f"Файл {path} повреждён: элементы массива должны быть "
+                    f"объектами. Удалите файл — он будет создан автоматически."
+                )
+        elif isinstance(default, dict) and not isinstance(data, dict):
             raise StorageError(
-                f"Не удалось прочитать {path}: {exc}"
-            ) from exc
+                f"Файл {path} повреждён: ожидался JSON-объект, "
+                f"получено {type(data).__name__}."
+            )
+        return data
 
     def write(self, path: str, data) -> None:
         directory = os.path.dirname(path)
@@ -69,15 +73,11 @@ class DatabaseManager:
             raise StorageError(f"Не удалось записать {path}: {exc}") from exc
 
     def transaction(self, path: str, default, mutator):
-        """Read → mutator(data) → write.
-
-        Если ``mutator`` бросает исключение — файл не перезаписывается,
-        а исключение пробрасывается вызывающему.
-        """
+        """Read → mutator(data) in-place → write(data)."""
         data = self.read(path, default)
-        new_data = mutator(data)
-        self.write(path, new_data)
-        return new_data
+        mutator(data)
+        self.write(path, data)
+        return data
 
 
 db = DatabaseManager()

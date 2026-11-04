@@ -6,18 +6,7 @@ from valutatrade_hub.infra.settings import settings
 
 
 def setup_logging() -> None:
-    """Настроить корневой логгер проекта.
-
-    Политика (зафиксирована в 3.4):
-      * формат — строковый (не JSON), ``%(levelname)s %(asctime)s %(message)s``,
-        дата ISO: ``%Y-%m-%dT%H:%M:%S``;
-      * уровень — из ``settings["log_level"]`` (INFO по умолчанию,
-        DEBUG для отладки);
-      * ротация — ``RotatingFileHandler`` по размеру:
-        ``log_max_bytes`` (1 МБ) и ``log_backup_count`` (5 файлов);
-      * обработчики: файл ``logs/actions.log`` + консоль (stdout) — чтобы
-        видеть записи и в интерактиве, и в файле.
-    """
+    """Настроить корневой логгер проекта."""
     level_name = str(settings.get("log_level", "INFO")).upper()
     level = getattr(logging, level_name, logging.INFO)
 
@@ -57,3 +46,34 @@ def setup_logging() -> None:
     console_handler.setFormatter(formatter)
     console_handler.setLevel(level)
     root.addHandler(console_handler)
+
+    parser_path = settings.get("parser_log_path", "logs/parser.log")
+    parser_dir = os.path.dirname(parser_path)
+    if parser_dir and not os.path.isdir(parser_dir):
+        os.makedirs(parser_dir, exist_ok=True)
+
+    parser_logger = logging.getLogger("valutatrade.parser")
+    for h in list(parser_logger.handlers):
+        parser_logger.removeHandler(h)
+        try:
+            h.close()
+        except Exception:
+            pass
+
+    parser_file = RotatingFileHandler(
+        parser_path,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    parser_file.setFormatter(formatter)
+    parser_file.setLevel(level)
+    parser_logger.addHandler(parser_file)
+
+    parser_console = logging.StreamHandler()
+    parser_console.setFormatter(formatter)
+    parser_console.setLevel(level)
+    parser_logger.addHandler(parser_console)
+
+    parser_logger.setLevel(level)
+    parser_logger.propagate = False

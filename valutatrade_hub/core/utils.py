@@ -16,7 +16,21 @@ STUB_EXCHANGE_RATES = {
     "BTC_USD": 59337.21,
     "RUB_USD": 0.01016,
     "ETH_USD": 3720.00,
+    "USD_USD": 1.0,
+    "GBP_USD": 1.25,
+    "SOL_USD": 145.12,
 }
+
+
+def _to_usd_rates(pairs: dict) -> dict:
+    """Из {'EUR_USD': 1.0786, ...} сделать {'EUR': 1.0786, 'USD': 1.0, ...}."""
+    usd = {"USD": 1.0}
+    for pair, rate in pairs.items():
+        if not isinstance(pair, str) or not pair.endswith("_USD"):
+            continue
+        code = pair.split("_", 1)[0]
+        usd[code] = float(rate)
+    return usd
 
 
 def load_json(path, default):

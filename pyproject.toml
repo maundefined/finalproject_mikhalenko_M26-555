@@ -1,5 +1,5 @@
 [project]
-name = "finalproject-mikhalenko-m26-555"
+name = "finalproject_mikhalenko_m26_555"
 version = "0.1.0"
 description = "Учебное приложение для управления валютным портфелем и получения курсов валют"
 readme = "README.md"
@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-valutatrade = "valutatrade_hub.cli.interface:run"
+valutatrade = "valutatrade_hub.cli.interface:main"
 
 [dependency-groups]
 dev = [
@@ -27,3 +27,14 @@ select = ["E", "F", "I", "B", "UP"]
 rates_ttl_seconds = 300
 default_base_currency = "USD"
 log_level = "INFO"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["valutatrade_hub*"]
+exclude = ["data*", "logs*", "tests*"]
+
+[tool.uv]
+package = true

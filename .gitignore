@@ -4,3 +4,5 @@ dist/
 .env
 data/
 logs/
+.ruff_cache/
+*.egg-info/
